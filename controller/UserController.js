@@ -11,19 +11,20 @@ const mongoose = require('mongoose')
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 // Initialize Gemini AI
-const genAI = new GoogleGenerativeAI('');
+const genAI = new GoogleGenerativeAI('AIzaSyC2vA5DNw-g9jYGlRqomFKJQUrvw9q--Zo');
 
 const generatePredictions = (transactions) => {
-  const next7Days = Array.from({ length: 7 }, (_, i) => {
+  const next30Days = Array.from({ length: 30 }, (_, i) => {
     const date = new Date();
     date.setDate(date.getDate() + i);
     return date.toISOString().split('T')[0];
   });
 
-  // Calculate average daily expenses and income
+  // Calculate average daily expenses and income for each day of the week
   const expensesByDay = {};
   const incomeByDay = {};
   
+  // Group transactions by day of week and calculate total
   transactions.forEach(transaction => {
     const dayOfWeek = new Date(transaction.date).getDay();
     if (transaction.type === 'expense') {
@@ -33,21 +34,22 @@ const generatePredictions = (transactions) => {
     }
   });
 
-  return next7Days.map(date => {
+  // Generate predictions for next 30 days
+  return next30Days.map(date => {
     const dayOfWeek = new Date(date).getDay();
     return {
       date,
-      predictedExpenses: Math.round((expensesByDay[dayOfWeek] || 0) / 4), // Divide by 4 weeks
-      predictedIncome: Math.round((incomeByDay[dayOfWeek] || 0) / 4)
+      predictedExpenses: Math.round((expensesByDay[dayOfWeek] || 0) / 12), // Divide by approximately 12 weeks
+      predictedIncome: Math.round((incomeByDay[dayOfWeek] || 0) / 12)
     };
   });
 };
 
-// Helper function to generate AI-powered predictions and insights
+// Helper function to get AI-powered predictions and insights
 async function getAIPredictionsAndInsights(transactions, categoryAnalysis, budgetStatus) {
-  const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
 
-  // Prepare data for AI analysis
+  // Prepare data for AI analysis with 30 days of context
   const financialContext = {
     transactionHistory: transactions.map(t => ({
       amount: t.amount,
@@ -56,26 +58,27 @@ async function getAIPredictionsAndInsights(transactions, categoryAnalysis, budge
       date: t.date
     })),
     categoryPerformance: categoryAnalysis,
-    budgetUtilization: budgetStatus
+    budgetUtilization: budgetStatus,
+    analysisTimeframe: "Last 30 Days"
   };
 
-  // Generate prompt for AI analysis
+  // Updated prompt to emphasize 30-day analysis and enforce structure
   const prompt = `
-    As a financial advisor, analyze this financial data and provide insights. 
+    Provide a comprehensive 30-day financial analysis as a financial advisor. 
     Return the analysis in strict JSON format without any markdown formatting or code blocks.
-    Here's the data to analyze:
+    Focus on a detailed 30-day financial overview.
 
     Transaction History: ${JSON.stringify(financialContext.transactionHistory)}
     Category Performance: ${JSON.stringify(financialContext.categoryPerformance)}
     Budget Status: ${JSON.stringify(financialContext.budgetUtilization)}
 
-    Provide the following in your JSON response:
-    - spendingPatterns: Array of identified spending patterns
-    - budgetRecommendations: Array of specific recommendations
-    - savingsOpportunities: Array of potential savings
-    - incomeGrowth: Array of income improvement suggestions
-    - riskAssessment: Array of identified risks
-    - confidenceScore: Number between 0 and 1
+    In your JSON response, ONLY use these exact field names:
+    - spendingPatterns: Array of objects with {pattern: string}
+    - budgetRecommendations: Array of objects with {recommendation: string}
+    - savingsOpportunities: Array of objects with {opportunity: string, potentialSavings: number}
+    - incomeGrowth: Array of objects with {strategy: string, potentialIncrease: number}
+    - riskAssessment: Array of objects with {risk: string, severity: string, mitigation: string}
+    - confidenceScore: Numerical confidence in the analysis (0-1)
   `;
 
   try {
@@ -84,43 +87,98 @@ async function getAIPredictionsAndInsights(transactions, categoryAnalysis, budge
     let responseText = response.text();
     
     // Clean up the response text to ensure valid JSON
-    responseText = responseText.replace(/```json\s*|\s*```/g, ''); // Remove any markdown code blocks
+    responseText = responseText.replace(/```json\s*|\s*```/g, '');
     responseText = responseText.trim();
     
-    // Attempt to parse the cleaned response
     try {
       const aiInsights = JSON.parse(responseText);
+      
+      // Create a standardized response with default empty arrays for missing fields
       return {
         aiPredictions: {
-          spendingPatterns: aiInsights.spendingPatterns || [],
-          budgetRecommendations: aiInsights.budgetRecommendations || [],
-          savingsOpportunities: aiInsights.savingsOpportunities || [],
-          incomeGrowth: aiInsights.incomeGrowth || [],
-          riskAssessment: aiInsights.riskAssessment || []
+          spendingPatterns: formatPatterns(aiInsights.spendingPatterns),
+          budgetRecommendations: formatRecommendations(aiInsights.budgetRecommendations),
+          savingsOpportunities: formatSavings(aiInsights.savingsOpportunities),
+          incomeGrowth: formatIncome(aiInsights.incomeGrowth),
+          riskAssessment: formatRisks(aiInsights.riskAssessment)
         },
         confidenceScore: aiInsights.confidenceScore || 0.8
       };
     } catch (parseError) {
       console.error('JSON parsing error:', parseError);
-      // Provide fallback analysis if parsing fails
-      return {
-        aiPredictions: {
-          spendingPatterns: [{pattern: "Analysis unavailable due to parsing error"}],
-          budgetRecommendations: [],
-          savingsOpportunities: [],
-          incomeGrowth: [],
-          riskAssessment: []
-        },
-        confidenceScore: 0
-      };
+      return getDefaultAIResponse("30-day analysis unavailable due to parsing error");
     }
   } catch (error) {
     console.error('AI analysis error:', error);
-    return null;
+    return getDefaultAIResponse("AI service unavailable");
   }
 }
 
-// Keep existing helper functions
+// Helper functions to standardize the AI response structure
+function formatPatterns(patterns) {
+  if (!patterns || !Array.isArray(patterns)) return [{ pattern: "No spending patterns identified" }];
+  return patterns.map(p => {
+    if (typeof p === 'string') return { pattern: p };
+    return { pattern: p.pattern || p.description || p.text || "Unspecified pattern" };
+  });
+}
+
+function formatRecommendations(recommendations) {
+  if (!recommendations || !Array.isArray(recommendations)) return [{ recommendation: "No budget recommendations available" }];
+  return recommendations.map(r => {
+    if (typeof r === 'string') return { recommendation: r };
+    return { recommendation: r.recommendation || r.suggestion || r.advice || r.text || "Unspecified recommendation" };
+  });
+}
+
+function formatSavings(savings) {
+  if (!savings || !Array.isArray(savings)) return [{ opportunity: "No savings opportunities identified", potentialSavings: 0 }];
+  return savings.map(s => {
+    if (typeof s === 'string') return { opportunity: s, potentialSavings: 0 };
+    return { 
+      opportunity: s.opportunity || s.suggestion || s.description || s.text || "Unspecified opportunity", 
+      potentialSavings: s.potentialSavings || s.savings || s.amount || 0 
+    };
+  });
+}
+
+function formatIncome(income) {
+  if (!income || !Array.isArray(income)) return [{ strategy: "No income growth strategies identified", potentialIncrease: 0 }];
+  return income.map(i => {
+    if (typeof i === 'string') return { strategy: i, potentialIncrease: 0 };
+    return { 
+      strategy: i.strategy || i.opportunity || i.suggestion || i.description || i.text || "Unspecified strategy", 
+      potentialIncrease: i.potentialIncrease || i.increase || i.amount || 0 
+    };
+  });
+}
+
+function formatRisks(risks) {
+  if (!risks || !Array.isArray(risks)) return [{ risk: "No financial risks identified", severity: "low", mitigation: "Continue monitoring your finances" }];
+  return risks.map(r => {
+    if (typeof r === 'string') return { risk: r, severity: "medium", mitigation: "Monitor this risk" };
+    return { 
+      risk: r.risk || r.description || r.issue || r.text || "Unspecified risk", 
+      severity: r.severity || "medium", 
+      mitigation: r.mitigation || r.solution || r.action || "Monitor this risk" 
+    };
+  });
+}
+
+function getDefaultAIResponse(message) {
+  return {
+    aiPredictions: {
+      spendingPatterns: [{ pattern: message }],
+      budgetRecommendations: [{ recommendation: "Set budgets for your major spending categories" }],
+      savingsOpportunities: [{ opportunity: "Review your recurring subscriptions", potentialSavings: 0 }],
+      incomeGrowth: [{ strategy: "Consider diversifying your income sources", potentialIncrease: 0 }],
+      riskAssessment: [{ risk: "Limited financial data available", severity: "medium", mitigation: "Continue tracking your finances" }]
+    },
+    confidenceScore: 0
+  };
+}
+
+// Helper function to analyze overspending
 const analyzeOverspending = (categoryAnalysis, budgetStatus) => {
   const overspending = [];
   
@@ -140,6 +198,7 @@ const analyzeOverspending = (categoryAnalysis, budgetStatus) => {
   return overspending;
 };
 
+// Helper function to generate savings recommendations
 const generateSavingsRecommendations = (categoryAnalysis) => {
   const recommendations = [];
   
@@ -163,6 +222,7 @@ const generateSavingsRecommendations = (categoryAnalysis) => {
   return recommendations;
 };
 
+// Helper function to analyze income opportunities
 const analyzeIncomeOpportunities = (categoryAnalysis) => {
   const opportunities = [];
   
@@ -180,6 +240,7 @@ const analyzeIncomeOpportunities = (categoryAnalysis) => {
   return opportunities;
 };
 
+// Helper function to generate risk analysis
 const generateRiskAnalysis = (categoryAnalysis, budgetStatus) => {
   const risks = [];
   
@@ -209,18 +270,21 @@ const generateRiskAnalysis = (categoryAnalysis, budgetStatus) => {
   return risks;
 };
 
-// Main analysis function
+// Main financial analysis controller
 exports.getAIFinancialAnalysis = async (req, res) => {
   try {
     const userId = req.params.userId;
-    const threeMonthsAgo = new Date();
-    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+    
+    // Fetch transactions for the last 30 days
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
     const transactions = await Transaction.find({
       user: userId,
-      date: { $gte: threeMonthsAgo }
+      date: { $gte: thirtyDaysAgo }
     }).populate('category');
 
+    // Fetch user's budget
     const budget = await Budjet.findOne({
       user: userId
     }).populate('categories.category');
@@ -252,6 +316,7 @@ exports.getAIFinancialAnalysis = async (req, res) => {
       return acc;
     }, {});
 
+    // Process category analysis
     const processedCategoryAnalysis = Object.entries(categoryAnalysis).map(([category, data]) => ({
       category,
       totalSpent: data.total,
@@ -260,6 +325,7 @@ exports.getAIFinancialAnalysis = async (req, res) => {
       type: data.type
     }));
 
+    // Process budget status
     const budgetStatus = budget.categories.map(cat => ({
       name: cat.name,
       limit: cat.limit,
@@ -287,9 +353,7 @@ exports.getAIFinancialAnalysis = async (req, res) => {
         income: analyzeIncomeOpportunities(processedCategoryAnalysis),
         risks: generateRiskAnalysis(processedCategoryAnalysis, budgetStatus)
       },
-      aiInsights: aiAnalysis || {
-        message: "AI analysis unavailable, falling back to traditional analysis"
-      }
+      aiInsights: aiAnalysis
     };
 
     res.json({
@@ -306,8 +370,6 @@ exports.getAIFinancialAnalysis = async (req, res) => {
     });
   }
 };
-
-
 exports.createUser = async (req, res) => {
     const { name, email, password, phone } = req.body;
 
@@ -382,212 +444,193 @@ res.status(200).json({user, budjet, transaction, wallet});
     }
 }
 
-
 exports.getUserTransactionData = async (req, res) => {
-    const { userId } = req.params;
-    try {
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const { userId } = req.params;
+  
+  try {
+    // Get data for the last 30 days
+    const today = new Date();
+    const thirtyDaysAgo = new Date(today);
+    thirtyDaysAgo.setDate(today.getDate() - 30);
 
-        const transactions = await Transaction.find({
-            user: userId,
-            date: { $gte: sevenDaysAgo }
-        }).populate('category');
+    // Find transactions for the user in the last 30 days
+    const transactions = await Transaction.find({
+      user: userId,
+      date: { 
+        $gte: thirtyDaysAgo, 
+        $lte: today 
+      }
+    }).populate('category').sort({ date: 1 });
 
-        const wallet = await Wallet.findOne({ user: userId });
+    // Find user's wallet
+    const wallet = await Wallet.findOne({ user: userId });
 
-        let expenseCategories = [];
-        let incomeCategories = [];
-        let weeklyData = {};
-        let balanceTrend = [];
-        let totalIncome = 0;
-        let totalExpense = 0;
+    // Prepare data containers
+    let expenseCategories = [];
+    let incomeCategories = [];
+    let categorySummary = {
+      expenses: [],
+      income: []
+    };
+    let balanceTrend = [];
+    let totalIncome = 0;
+    let totalExpense = 0;
 
-        // Sort transactions by date (ascending)
-        const sortedTransactions = transactions.sort((a, b) => new Date(a.date) - new Date(b.date));
+    // Create precise week boundaries
+    const weekBoundaries = [
+      {
+        start: new Date(thirtyDaysAgo),
+        end: new Date(new Date(thirtyDaysAgo).setDate(thirtyDaysAgo.getDate() + 6)),
+        week: "1"
+      },
+      {
+        start: new Date(new Date(thirtyDaysAgo).setDate(thirtyDaysAgo.getDate() + 7)),
+        end: new Date(new Date(thirtyDaysAgo).setDate(thirtyDaysAgo.getDate() + 13)),
+        week: "2"
+      },
+      {
+        start: new Date(new Date(thirtyDaysAgo).setDate(thirtyDaysAgo.getDate() + 14)),
+        end: new Date(new Date(thirtyDaysAgo).setDate(thirtyDaysAgo.getDate() + 20)),
+        week: "3"
+      },
+      {
+        start: new Date(new Date(thirtyDaysAgo).setDate(thirtyDaysAgo.getDate() + 21)),
+        end: today,
+        week: "4"
+      }
+    ];
 
-        // Process transactions for categories and weekly data
-        sortedTransactions.forEach(txn => {
-            const formattedDate = txn.date.toISOString().split('T')[0];
-            const day = txn.date.toLocaleDateString('en-US', { weekday: 'short' });
+    // Prepare category summaries
+    const expenseSummary = {};
+    const incomeSummary = {};
 
-            if (txn.type === "expense") {
-                totalExpense += txn.amount;
-                expenseCategories.push({
-                    user: txn.user,
-                    type: txn.type,
-                    amount: txn.amount,
-                    category: txn.category._id,
-                    date: txn.date,
-                    note: txn.note
-                });
-            } else if (txn.type === "income") {
-                totalIncome += txn.amount;
-                incomeCategories.push({
-                    user: txn.user,
-                    type: txn.type,
-                    amount: txn.amount,
-                    category: txn.category._id,
-                    date: txn.date,
-                    note: txn.note
-                });
-            }
+    // Process transactions
+    transactions.forEach(txn => {
+      const categoryId = txn.category._id.toString();
+      const categoryName = txn.category.name;
+      const categoryIcon = txn.category.icon;
+      const categoryColor = txn.category.color;
 
-            if (!weeklyData[formattedDate]) {
-                weeklyData[formattedDate] = { date: formattedDate, day, transactions: [] };
-            }
-            weeklyData[formattedDate].transactions.push({
-                user: txn.user,
-                type: txn.type,
-                amount: txn.amount,
-                category: txn.category._id,
-                date: txn.date,
-                note: txn.note
-            });
+      // Original expense and income categories
+      if (txn.type === "expense") {
+        totalExpense += txn.amount;
+        expenseCategories.push({
+          user: txn.user,
+          type: txn.type,
+          amount: txn.amount,
+          category: txn.category._id,
+          date: txn.date
         });
 
-        // Sort weekly data
-        const sortedWeeklyData = Object.values(weeklyData).sort((a, b) => 
-            new Date(a.date) - new Date(b.date)
-        );
-
-        // Calculate starting balance (current balance minus all transactions)
-        let startingBalance = wallet ? wallet.balance : 0;
-        sortedTransactions.forEach(txn => {
-            startingBalance -= txn.type === "income" ? txn.amount : -txn.amount;
-        });
-
-        // Generate balance trend starting from the initial balance
-        let runningBalance = startingBalance;
-        balanceTrend = sortedWeeklyData.map(day => {
-            day.transactions.forEach(txn => {
-                runningBalance += txn.type === "income" ? txn.amount : -txn.amount;
-            });
-            return {
-                date: day.date,
-                balance: runningBalance
-            };
-        });
-
-        // Add starting balance as first point if there are transactions
-        if (balanceTrend.length > 0) {
-            balanceTrend.unshift({
-                date: sevenDaysAgo.toISOString().split('T')[0],
-                balance: startingBalance
-            });
+        // Category summary for expenses
+        if (!expenseSummary[categoryId]) {
+          expenseSummary[categoryId] = {
+            name: categoryName,
+            icon: categoryIcon,
+            color: categoryColor,
+            totalAmount: 0,
+            transactionCount: 0,
+            transactions: []
+          };
         }
+        expenseSummary[categoryId].totalAmount += txn.amount;
+        expenseSummary[categoryId].transactionCount++;
+        expenseSummary[categoryId].transactions.push({
+          date: txn.date,
+          amount: txn.amount
+        });
+      } else if (txn.type === "income") {
+        totalIncome += txn.amount;
+        incomeCategories.push({
+          user: txn.user,
+          type: txn.type,
+          amount: txn.amount,
+          category: txn.category._id,
+          date: txn.date
+        });
 
-        const formattedData = {
-            expenseCategories,
-            incomeCategories,
-            weeklyData: sortedWeeklyData,
-            balanceTrend,
-            summary: {
-                totalIncome,
-                totalExpense,
-                netBalance: totalIncome - totalExpense,
-                startingBalance,
-                endingBalance: wallet ? wallet.balance : 0,
-            }
-        };
-
-        res.json(formattedData);
-    } catch (error) {
-        res.status(500).json({ error: `Error getting transaction data: ${error.message}` });
-    }
-};
-
-function getDefaultColor(index) {
-  const colors = [
-    '#FF8A65', '#FFB74D', '#4DD0E1', '#81C784', 
-    '#64B5F6', '#BA68C8', '#A1887F', '#90A4AE'
-  ];
-  return colors[index % colors.length];
-}
-
-
-
-
-const data = {
-  predictions : {
-    general : [
-      {
-        category: "Salary",
-        amount: 5000,
-        date: "2023-10-01"
-      },
-      {
-        category: "Investment",
-        amount: 2000,
-        date: "2023-10-02"
-      },
-      {
-        category: "Gift",
-        amount: 1000,
-         date: "2023-10-03"
-      },
-      {
-        category: "Rent",
-        amount: 1000,
-        date: "2023-10-01"
-      },
-      {
-        category: "Utilities",
-        amount: 500,
-        date: "2023-10-02"
-      },
-      {
-        category: "Groceries",
-        amount: 300,
-        date: "2023-10-03"
+        // Category summary for income
+        if (!incomeSummary[categoryId]) {
+          incomeSummary[categoryId] = {
+            name: categoryName,
+            icon: categoryIcon,
+            color: categoryColor,
+            totalAmount: 0,
+            transactionCount: 0,
+            transactions: []
+          };
+        }
+        incomeSummary[categoryId].totalAmount += txn.amount;
+        incomeSummary[categoryId].transactionCount++;
+        incomeSummary[categoryId].transactions.push({
+          date: txn.date,
+          amount: txn.amount
+        });
       }
-    ],
-    income : [
-      {
-        category: "Salary",
-        amount: 5000,
-        date: "2023-10-01"
-      },
-      {
-        category: "Investment",
-        amount: 2000,
-        date: "2023-10-02"
-      },
-      {
-        category: "Gift",
-        amount: 1000,
-         date: "2023-10-03"
-      }
-    ],
-expence : [
-      {
-        category: "Rent",
-        amount: 1000,
-        date: "2023-10-01"
-      },
-      {
-        category: "Utilities",
-        amount: 500,
-        date: "2023-10-02"
-      },
-      {
-        category: "Groceries",
-        amount: 300,
-        date: "2023-10-03"
-      }
-]
-  },
-  suggestions : {
-    IncreaseIncome : [
-      'You asldjkwsafjd aspjaspodasd ',
-      'adkaskld aposdu azsjd asdoj asd',
-      "oasjdf poasjd poajsdfp asdf"
-    ],
-   IncreaseSavings : [
-      'You asldjkwsafjd aspjaspodasd ',
-      'adkaskld aposdu azsjd asdoj asd',
-      "oasjdf poasjd poajsdfp asdf"
-   ],
+    });
 
+    // Convert to array and sort by total amount (descending)
+    categorySummary.expenses = Object.values(expenseSummary)
+      .sort((a, b) => b.totalAmount - a.totalAmount);
+    
+    categorySummary.income = Object.values(incomeSummary)
+      .sort((a, b) => b.totalAmount - a.totalAmount);
+
+    // Calculate balance trend
+    let runningBalance = wallet ? wallet.balance : 0;
+    const initialBalance = runningBalance;
+    
+    // First balance trend entry
+    balanceTrend.push({
+      date: thirtyDaysAgo.toISOString().split('T')[0],
+      week: "0",
+      balance: initialBalance
+    });
+
+    // Calculate balance for each week boundary
+    weekBoundaries.forEach(boundary => {
+      const weekTransactions = transactions.filter(txn => {
+        const txnDate = new Date(txn.date);
+        return txnDate >= boundary.start && txnDate <= boundary.end;
+      });
+
+      weekTransactions.forEach(txn => {
+        runningBalance += txn.type === "income" ? txn.amount : -txn.amount;
+      });
+
+      balanceTrend.push({
+        date: boundary.end.toISOString().split('T')[0],
+        week: boundary.week,
+        balance: runningBalance
+      });
+    });
+
+    // Prepare final response
+    const formattedData = {
+      expenseCategories,
+      incomeCategories,
+      categorySummary,
+      balanceTrend,
+      summary: {
+        totalIncome,
+        totalExpense,
+        netBalance: totalIncome - totalExpense,
+        startingBalance: initialBalance,
+        endingBalance: runningBalance,
+        period: {
+          start: thirtyDaysAgo,
+          end: today,
+          weeks: 4
+        }
+      }
+    };
+
+    res.json(formattedData);
+  } catch (error) {
+    console.error('Error getting transaction data:', error);
+    res.status(500).json({ 
+      error: `Error getting transaction data: ${error.message}`,
+      details: error.toString() 
+    });
   }
-}
+};
