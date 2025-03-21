@@ -10,19 +10,16 @@ exports.createTransaction = async (req, res) => {
         const { type, amount, category, date, note } = req.body;
         const { id } = req.user;
 
-        // Validate inputs
         if (!type || !amount || !category || !date) {
             return res.status(400).json({ message: 'Missing required fields' });
         }
 
-        // Check if user exists
         const isUser = await User.findById(id);
         if (!isUser) {
             console.log("User not found!");
             return res.status(404).json({ message: 'User not found' });
         }
 
-        // Create new transaction
         const transaction = new Transaction({
             user: id,
             type,
@@ -35,14 +32,12 @@ exports.createTransaction = async (req, res) => {
         await transaction.save();
         console.log("Transaction saved:", transaction);
 
-        // Find and update wallet
         const wallet = await Wallet.findOne({ user: id });
         if (!wallet) {
             console.log("Wallet not found!");
             return res.status(404).json({ message: "Wallet not found" });
         }
 
-        // Update wallet balance
         if (type === 'income') {
             wallet.balance += Number(amount);
         } else if (type === 'expense') {
@@ -52,9 +47,7 @@ exports.createTransaction = async (req, res) => {
         await wallet.save();
         console.log("Wallet updated:", wallet.balance);
 
-        // Only process budget updates for expenses
         if (type === 'expense') {
-            // Find budget with the specific category
             const budget = await Budget.findOne({
                 user: id,
                 "categories.category": category
@@ -63,7 +56,6 @@ exports.createTransaction = async (req, res) => {
             if (budget) {
                 console.log("Budget found:", budget);
                 
-                // Find the specific category in the budget
                 const categoryIndex = budget.categories.findIndex(
                     cat => cat.category.toString() === category.toString()
                 );
@@ -76,7 +68,6 @@ exports.createTransaction = async (req, res) => {
                     console.log('Transaction Date:', transactionDate);
                     console.log('Budget End Date:', endDate);
 
-                    // Check if transaction date is within budget period
                     if (transactionDate <= endDate) {
                         try {
                             await Budget.findOneAndUpdate(
@@ -94,7 +85,6 @@ exports.createTransaction = async (req, res) => {
                             console.log("Budget spent amount updated successfully");
                         } catch (updateError) {
                             console.error("Error updating budget:", updateError);
-                            // Continue execution even if budget update fails
                         }
                     } else {
                         console.log("Transaction date is after budget end date - not updating spent amount");
@@ -107,7 +97,6 @@ exports.createTransaction = async (req, res) => {
             }
         }
 
-        // Get updated budget for response
         const newBudget = await Budget.findOne({ user: id });
         
         res.status(201).json({

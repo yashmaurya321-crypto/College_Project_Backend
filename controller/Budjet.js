@@ -83,28 +83,28 @@ const createBudjet = async (req, res) => {
   
   const updateOrCreateCategory = async (req, res) => {
     try {
-      const userId = req.params.userId; // Get the userId from the URL params
-      const { name, category, limit, startDate, endDate } = req.body; // Get category details from the body
+      const userId = req.params.userId; 
+      const { name, category, limit, startDate, endDate } = req.body; 
   
-      // Validate input
+     
       if ( !name || !category || !limit || !startDate || !endDate) {
         return res.status(400).json({ message: 'All fields are required' });
       }
   
-      // Find the budget by the userId
+    
       const budget = await Budjet.findOne({ user: userId });
   
       if (!budget) {
         return res.status(404).json({ message: 'Budget not found for this user' });
       }
   
-      // Check if the category already exists in the user's budget by categoryId
+      
       const existingCategoryIndex = budget.categories.findIndex(
         (cat) => cat.name.toString() === name
       );
   
       if (existingCategoryIndex !== -1) {
-        // Category exists, update it
+       
         budget.categories[existingCategoryIndex] = {
           ...budget.categories[existingCategoryIndex],
           name,
@@ -114,25 +114,25 @@ const createBudjet = async (req, res) => {
           endDate,
         };
   
-        // Save the updated budget
+      
         await budget.save();
   
         return res.status(200).json({ message: 'Category updated successfully', budget });
       } else {
-        // Category does not exist, create it
+        
         const newCategory = {
           name,
           category,
           limit,
-          spent: 0, // Default spent is 0
+          spent: 0, 
           startDate,
           endDate,
         };
   
-        // Add the new category to the budget
+        
         budget.categories.push(newCategory);
   
-        // Save the updated budget with the new category
+       
         await budget.save();
   
         return res.status(201).json({ message: 'Category created successfully', budget });
@@ -143,7 +143,6 @@ const createBudjet = async (req, res) => {
     }
   };
   
-  // Delete a Budjet by ID
   const deleteBudjet = async (req, res) => {
     try {
       const BudjetId = req.params.id;

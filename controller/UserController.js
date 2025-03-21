@@ -10,8 +10,7 @@ const mongoose = require('mongoose')
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-// Initialize Gemini AI
-const genAI = new GoogleGenerativeAI('AIzaSyC2vA5DNw-g9jYGlRqomFKJQUrvw9q--Zo');
+const genAI = new GoogleGenerativeAI('');
 
 const generatePredictions = (transactions) => {
   const next30Days = Array.from({ length: 30 }, (_, i) => {
@@ -20,11 +19,9 @@ const generatePredictions = (transactions) => {
     return date.toISOString().split('T')[0];
   });
 
-  // Calculate average daily expenses and income for each day of the week
   const expensesByDay = {};
   const incomeByDay = {};
   
-  // Group transactions by day of week and calculate total
   transactions.forEach(transaction => {
     const dayOfWeek = new Date(transaction.date).getDay();
     if (transaction.type === 'expense') {
@@ -34,22 +31,19 @@ const generatePredictions = (transactions) => {
     }
   });
 
-  // Generate predictions for next 30 days
   return next30Days.map(date => {
     const dayOfWeek = new Date(date).getDay();
     return {
       date,
-      predictedExpenses: Math.round((expensesByDay[dayOfWeek] || 0) / 12), // Divide by approximately 12 weeks
+      predictedExpenses: Math.round((expensesByDay[dayOfWeek] || 0) / 12), 
       predictedIncome: Math.round((incomeByDay[dayOfWeek] || 0) / 12)
     };
   });
 };
 
-// Helper function to get AI-powered predictions and insights
 async function getAIPredictionsAndInsights(transactions, categoryAnalysis, budgetStatus) {
   const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
 
-  // Prepare data for AI analysis with 30 days of context
   const financialContext = {
     transactionHistory: transactions.map(t => ({
       amount: t.amount,
@@ -62,7 +56,6 @@ async function getAIPredictionsAndInsights(transactions, categoryAnalysis, budge
     analysisTimeframe: "Last 30 Days"
   };
 
-  // Updated prompt to emphasize 30-day analysis and enforce structure
   const prompt = `
     Provide a comprehensive 30-day financial analysis as a financial advisor. 
     Return the analysis in strict JSON format without any markdown formatting or code blocks.
@@ -86,14 +79,12 @@ async function getAIPredictionsAndInsights(transactions, categoryAnalysis, budge
     const response = await result.response;
     let responseText = response.text();
     
-    // Clean up the response text to ensure valid JSON
     responseText = responseText.replace(/```json\s*|\s*```/g, '');
     responseText = responseText.trim();
     
     try {
       const aiInsights = JSON.parse(responseText);
       
-      // Create a standardized response with default empty arrays for missing fields
       return {
         aiPredictions: {
           spendingPatterns: formatPatterns(aiInsights.spendingPatterns),
@@ -114,7 +105,6 @@ async function getAIPredictionsAndInsights(transactions, categoryAnalysis, budge
   }
 }
 
-// Helper functions to standardize the AI response structure
 function formatPatterns(patterns) {
   if (!patterns || !Array.isArray(patterns)) return [{ pattern: "No spending patterns identified" }];
   return patterns.map(p => {
@@ -178,7 +168,6 @@ function getDefaultAIResponse(message) {
   };
 }
 
-// Helper function to analyze overspending
 const analyzeOverspending = (categoryAnalysis, budgetStatus) => {
   const overspending = [];
   
@@ -198,7 +187,6 @@ const analyzeOverspending = (categoryAnalysis, budgetStatus) => {
   return overspending;
 };
 
-// Helper function to generate savings recommendations
 const generateSavingsRecommendations = (categoryAnalysis) => {
   const recommendations = [];
   
@@ -222,7 +210,6 @@ const generateSavingsRecommendations = (categoryAnalysis) => {
   return recommendations;
 };
 
-// Helper function to analyze income opportunities
 const analyzeIncomeOpportunities = (categoryAnalysis) => {
   const opportunities = [];
   
@@ -240,7 +227,6 @@ const analyzeIncomeOpportunities = (categoryAnalysis) => {
   return opportunities;
 };
 
-// Helper function to generate risk analysis
 const generateRiskAnalysis = (categoryAnalysis, budgetStatus) => {
   const risks = [];
   
@@ -269,13 +255,10 @@ const generateRiskAnalysis = (categoryAnalysis, budgetStatus) => {
 
   return risks;
 };
-
-// Main financial analysis controller
 exports.getAIFinancialAnalysis = async (req, res) => {
   try {
     const userId = req.params.userId;
     
-    // Fetch transactions for the last 30 days
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
@@ -284,7 +267,6 @@ exports.getAIFinancialAnalysis = async (req, res) => {
       date: { $gte: thirtyDaysAgo }
     }).populate('category');
 
-    // Fetch user's budget
     const budget = await Budjet.findOne({
       user: userId
     }).populate('categories.category');
@@ -296,7 +278,6 @@ exports.getAIFinancialAnalysis = async (req, res) => {
       });
     }
 
-    // Process categories
     const categoryAnalysis = transactions.reduce((acc, transaction) => {
       const category = transaction.category.name;
       if (!acc[category]) {
@@ -316,7 +297,6 @@ exports.getAIFinancialAnalysis = async (req, res) => {
       return acc;
     }, {});
 
-    // Process category analysis
     const processedCategoryAnalysis = Object.entries(categoryAnalysis).map(([category, data]) => ({
       category,
       totalSpent: data.total,
@@ -325,7 +305,6 @@ exports.getAIFinancialAnalysis = async (req, res) => {
       type: data.type
     }));
 
-    // Process budget status
     const budgetStatus = budget.categories.map(cat => ({
       name: cat.name,
       limit: cat.limit,
@@ -333,14 +312,12 @@ exports.getAIFinancialAnalysis = async (req, res) => {
       remaining: cat.limit - cat.spent
     }));
 
-    // Get AI-powered insights
     const aiAnalysis = await getAIPredictionsAndInsights(
       transactions,
       processedCategoryAnalysis,
       budgetStatus
     );
 
-    // Combine traditional analysis with AI insights
     const analysis = {
       historicalData: {
         categoryAnalysis: processedCategoryAnalysis,
@@ -370,6 +347,7 @@ exports.getAIFinancialAnalysis = async (req, res) => {
     });
   }
 };
+
 exports.createUser = async (req, res) => {
     const { name, email, password, phone } = req.body;
 
@@ -397,7 +375,7 @@ exports.createUser = async (req, res) => {
 };
 
 exports.login = async (req, res) => {
-    console.log("Login Request Body:", req.body); // Log incoming request body
+    console.log("Login Request Body:", req.body); 
     const { email, password } = req.body;
 
     if (!email || !password) {
@@ -448,12 +426,10 @@ exports.getUserTransactionData = async (req, res) => {
   const { userId } = req.params;
   
   try {
-    // Get data for the last 30 days
     const today = new Date();
     const thirtyDaysAgo = new Date(today);
     thirtyDaysAgo.setDate(today.getDate() - 30);
 
-    // Find transactions for the user in the last 30 days
     const transactions = await Transaction.find({
       user: userId,
       date: { 
@@ -462,10 +438,8 @@ exports.getUserTransactionData = async (req, res) => {
       }
     }).populate('category').sort({ date: 1 });
 
-    // Find user's wallet
     const wallet = await Wallet.findOne({ user: userId });
 
-    // Prepare data containers
     let expenseCategories = [];
     let incomeCategories = [];
     let categorySummary = {
@@ -476,7 +450,6 @@ exports.getUserTransactionData = async (req, res) => {
     let totalIncome = 0;
     let totalExpense = 0;
 
-    // Create precise week boundaries
     const weekBoundaries = [
       {
         start: new Date(thirtyDaysAgo),
@@ -500,18 +473,15 @@ exports.getUserTransactionData = async (req, res) => {
       }
     ];
 
-    // Prepare category summaries
     const expenseSummary = {};
     const incomeSummary = {};
 
-    // Process transactions
     transactions.forEach(txn => {
       const categoryId = txn.category._id.toString();
       const categoryName = txn.category.name;
       const categoryIcon = txn.category.icon;
       const categoryColor = txn.category.color;
 
-      // Original expense and income categories
       if (txn.type === "expense") {
         totalExpense += txn.amount;
         expenseCategories.push({
@@ -521,8 +491,6 @@ exports.getUserTransactionData = async (req, res) => {
           category: txn.category._id,
           date: txn.date
         });
-
-        // Category summary for expenses
         if (!expenseSummary[categoryId]) {
           expenseSummary[categoryId] = {
             name: categoryName,
@@ -549,7 +517,6 @@ exports.getUserTransactionData = async (req, res) => {
           date: txn.date
         });
 
-        // Category summary for income
         if (!incomeSummary[categoryId]) {
           incomeSummary[categoryId] = {
             name: categoryName,
@@ -569,25 +536,21 @@ exports.getUserTransactionData = async (req, res) => {
       }
     });
 
-    // Convert to array and sort by total amount (descending)
     categorySummary.expenses = Object.values(expenseSummary)
       .sort((a, b) => b.totalAmount - a.totalAmount);
     
     categorySummary.income = Object.values(incomeSummary)
       .sort((a, b) => b.totalAmount - a.totalAmount);
 
-    // Calculate balance trend
     let runningBalance = wallet ? wallet.balance : 0;
     const initialBalance = runningBalance;
     
-    // First balance trend entry
     balanceTrend.push({
       date: thirtyDaysAgo.toISOString().split('T')[0],
       week: "0",
       balance: initialBalance
     });
 
-    // Calculate balance for each week boundary
     weekBoundaries.forEach(boundary => {
       const weekTransactions = transactions.filter(txn => {
         const txnDate = new Date(txn.date);
@@ -605,7 +568,6 @@ exports.getUserTransactionData = async (req, res) => {
       });
     });
 
-    // Prepare final response
     const formattedData = {
       expenseCategories,
       incomeCategories,

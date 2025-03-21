@@ -21,7 +21,6 @@ exports.updateWallet = async (req, res) => {
 };
 
 
-// Get Wallet by ID
 exports.getWalletById = async (req, res) => {
     try {
         const wallet = await Wallet.findById(req.params.id).populate('user');
@@ -34,7 +33,6 @@ exports.getWalletById = async (req, res) => {
 
 
 
-// Delete Wallet
 exports.deleteWallet = async (req, res) => {
     try {
         const wallet = await Wallet.findByIdAndDelete(req.params.id);
